@@ -1,27 +1,39 @@
-org 0x7c00 ;originに0x7c00を指定
+org 0x7c00
 
 start:
-    mov ax, 0 ;axレジスタに0を代入
+    cli ;割り込みの禁止
+
+    xor ax, ax ;axレジスタに0を代入
     mov ds, ax ;data segmentに直接0を代入できないので、axレジスタを介して代入
-    mov es, ax ;extra segmentに直接0を代入できないので、axレジスタを介して代入
-    mov si, msgTextOS ;文字列の先頭アドレスをsource indexレジスタに代入
+    mov ss, ax 
+    mov sp, 0x7c00 ;文字列の先頭アドレスをsource indexレジスタに代入
 
-putLoop:
-    mov al, [si] ;source indexレジスタの指すメモリから1byteだけ読み取り、alに代入
-    cmp al, 0 ;先程読み取った文字が0(null終端文字)と等しいか比較(CoMPare)
-    je infLoop ;もし等しいなら(Jump if Equal)infLoopに飛ぶ
-    
-    mov ah, 0x0e ;ahレジスタに0x0e(1文字表示モード)を代入
-    int 0x10 ;0x10の割り込み(INTerrupt)を呼び出し。これでBIOSの画面出力プログラムを呼び出して描画が出来る
+    mov [bootDrive], dl ;BIOSが起動したドライブ番号を指定
 
-    inc si ;source indexの指すメモリをインクリメント
-    jmp putLoop ;ループの先頭に戻る
+    ;BIOSにディスクを読み込ませるとき、メモリのどこにデータを並べたらいいかをes:bxで指定
+    mov ax, 0x1000
+    mov es, ax
+    xor bx, bx
 
-infLoop:
-    hlt ;ハルト(cpuを省電力の待機状態にする命令)
-    jmp infLoop ;待機状態から何かしらの命令で復帰したとき再びinfLoopに戻して無限ループさせる
+    mov ah, 0x02    ;BIOSに対してディスクからセクタを読み込め(0x02)と命令
+    mov al, 5       ;ディスクっから5セクタ分を読み込めと指定
 
-msgTextOS: db "welcome to textOS",0x0d, 0x0a, "type your code here...",0
+    ;CHSアドレス指定
+    mov ch, 0       ;シリンダ番号=0
+    mov cl, 2       ;ディスクの2番目のセクタから読み込めと指示
+    mov dh, 0       ;ヘッド番号=0
 
-times 510 - ($ - $$) db 0 ;残りを0埋め
-dw 0xaa55 ;最後の2byteだけ、このファイルが正しいOSであることを示す魔法を書く
+    mov dl, [bootDrive]    ;ドライブ番号を指定。0x00は初めのフロッピーディスクドライブ。0x80にすれば、USBメモリやハードディスクから起動できる
+
+    int 0x13        ;BIOSの割り込みを実行
+    jc diskError   ;上手く読み込めなかったらエラー処理を回す(jump if carry)
+
+    jmp 0x1000:0x0000
+
+diskError:
+    jmp diskError
+
+bootDrive: db 0
+
+times 510-($-$$) db 0   ;0埋め
+dw 0xaa55               ;これがブートプログラムであることを示す魔法
