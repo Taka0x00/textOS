@@ -135,7 +135,6 @@ gameLoop:
 
 render:
     call drawSnakeHead
-    call drawApple
 
     ;cpuは爆速なので、FPSの調整を行う
     mov ah, 0x86    ;指定した時間プログラムの実行を止めるモード。単位はマイクロ秒。上位16bitと下位16bitに分割してセット
@@ -146,13 +145,24 @@ render:
     jmp gameLoop
 
 drawSnakeHead:
-    ;VRAMのセグメントをセット
-    mov al, [snakeX]
-    mov cl, [snakeY]
-    call getOffset  ;座標に対応したオフセットがbxに代入される
-
     mov ax, VRAM_SEGMENT
     mov es, ax
+
+    ;y座標から位置を計算
+    mov al, [snakeY]    ;alにY座標を代入
+    xor ah, ah           ;ahを0にして、ax全体をY座標の数値にする
+    mov cx, 6400        ;1マスY座標が下がるごとにオフセットは6400増える(=一行320bit*20行)
+    mul cx  ;ax*cxの値をdx:axに代入(ただし、今回はdxは必ず0)
+    mov bx, ax  ;axの値を一時的にbxに避難
+
+    ;x座標から一を計算
+    mov al, [snakeX]    ;alにX座標が代入されるが、ahにはゴミデータが入っている可能性がある
+    xor ah, ah   ;そこで、明示的に上位8bitに0を代入
+    mov dx, ax  ;axという16bitレジスタは上半分をah,下半分をalとして使うことが出来る。あらかじめ処理したahとalをここで合体させる
+    shl ax, 4   ;x座標を16倍する(4bitシフト)
+    shl dx, 2   ;x座標を4倍する(2bitsシフト)
+    add ax, dx  ;16x+4x=20x(つまり、X座標を20倍した値が得られる)
+    add bx,ax   ;これで、描画を始めるオフセットが手に入る
 
     mov ch, 20  ;縦のカウンター
 
@@ -171,98 +181,8 @@ drawSnakeHead:
 
     ret ;関数をcallされたらretで帰ってくる
 
-drawApple:
-    mov al, [appleX]
-    mov cl, [appleY]
-    call getOffset  ;座標に対応したオフセットがbxに代入される
-
-    mov ax, VRAM_SEGMENT
-    mov es, ax
-
-    mov si, appleSprite
-
-    mov ch, 20
-.drawRow:
-    mov cl, 20
-    mov di, bx
-
-.drawPixel:
-    lodsb
-
-    cmp al,255
-    je .skipPixel
-
-    mov [es:di], al
-
-.skipPixel:
-    inc di
-    dec cl
-    jnz .drawPixel
-
-    add bx, 320
-    dec ch
-    jnz .drawRow
-
-    ret
-
-;alにX座標を、clにY座標をあらかじめ代入してから使うこと
-getOffset:
-    push ax
-    push dx
-
-    ; Y * 6400
-    mov al, cl
-    xor ah, ah
-    mov cx, 6400
-    mul cx              ; DX:AX = Y * 6400
-    mov bx, ax
-
-    ; X を復元
-    pop dx              ; 捨てる（push dx と対応）
-    pop ax              ; AX = 元のX
-
-    mov dx, ax
-    shl ax, 4           ; X * 16
-    shl dx, 2           ; X * 4
-    add ax, dx          ; X * 20
-
-    add bx, ax
-
-    ret
+  
 
 snakeX db 0
 snakeY db 0
 snakeDir db 0   ;蛇の方向(1:up 2:down 3:left 4:right)
-snakeLength db 1;
-bodyX times MAX_SNAKE_LENGTH db 0
-bodyY times MAX_SNAKE_LENGTH db 0
-
-appleX db 5
-appleY db 8
-
-appleSprite:
-;葉っぱと茎
-    db 255,255,255,255,255,255,255,255, 2 , 2 , 2 ,255,255,255,255,255,255,255,255,255
-    db 255,255,255,255,255,255, 2 , 2 , 2 , 2 , 2 , 2 ,255,255,255,255,255,255,255,255
-    db 255,255,255,255,255,255,255,255,255, 6 ,255,255,255,255,255,255,255,255,255,255
-    db 255,255,255,255,255,255,255,255,255, 6 ,255,255,255,255,255,255,255,255,255,255
-;実の最上部
-    db 255,255,255,255, 1 , 1 , 1 , 1 ,255,255, 6 ,255, 1 , 1 , 1 , 1 ,255,255,255,255
-    db 255,255,255, 1 , 4 , 4 , 4 , 4 , 1 , 1 , 6 , 4 , 4 , 4 , 4 , 4 , 1 ,255,255,255
-    db 255,255, 1 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 1 ,255,255
-    db 255, 1 , 4 , 4 ,12 ,12 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 1 ,255
-;実の中央
-    db 255, 1 , 4 ,12 ,12 ,12 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 1 ,255
-    db  1 , 4 , 4 ,12 ,12 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 1 
-    db  1 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 1 
-    db  1 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 1 
-;実の真ん中
-    db 255, 1 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 1 ,255
-    db 255, 1 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 1 ,255
-    db 255,255, 1 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 1 ,255,255
-    db 255,255,255, 1 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 1 ,255,255,255
-;実の最下部
-    db 255,255,255,255, 1 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 4 , 1 ,255,255,255,255
-    db 255,255,255,255,255, 1 , 4 , 4 , 4 , 1 , 1 , 4 , 4 , 4 , 1 ,255,255,255,255,255
-    db 255,255,255,255,255,255, 1 , 1 , 1 ,255,255, 1 , 1 , 1 ,255,255,255,255,255,255
-    db 255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255
